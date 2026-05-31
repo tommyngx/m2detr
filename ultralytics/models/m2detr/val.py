@@ -11,8 +11,27 @@ import torch
 
 from ultralytics.models.rtdetr.val import RTDETRValidator
 from ultralytics.utils import YAML
+from ultralytics.utils.metrics import DetMetrics
 
 from .data import build_m2detr_csv_dataset, check_m2detr_csv_dataset, is_m2detr_csv_dataset
+
+
+class M2DETRMetrics(DetMetrics):
+    """Detection metrics with a compact repr for notebooks and train return values."""
+
+    def __str__(self) -> str:
+        """Return a concise summary instead of dumping all metric attributes and curves."""
+        try:
+            p, r, map50, map5095 = self.mean_results()
+            return (
+                "M2DETRMetrics("
+                f"precision={p:.5g}, recall={r:.5g}, mAP50={map50:.5g}, mAP50-95={map5095:.5g}"
+                ")"
+            )
+        except Exception:
+            return "M2DETRMetrics()"
+
+    __repr__ = __str__
 
 
 class M2DETRValidator(RTDETRValidator):
@@ -91,6 +110,7 @@ class M2DETRValidator(RTDETRValidator):
     def init_metrics(self, model: torch.nn.Module) -> None:
         """Initialize detection and image classification metric state."""
         super().init_metrics(model)
+        self.metrics.__class__ = M2DETRMetrics
         self._last_cls_logits = None
         self.image_cls_true = []
         self.image_cls_pred = []
