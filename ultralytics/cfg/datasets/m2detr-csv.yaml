@@ -1,0 +1,46 @@
+# Ultralytics 🚀 AGPL-3.0 License - https://ultralytics.com/license
+
+# M2DETR CSV metadata dataset example.
+# This format follows notebook/mammo2detr/zdetr: one CSV row per annotation,
+# grouped by image_id at runtime so each image can have 0..N boxes.
+
+# Dataset root. CSV paths and relative image links are resolved from here.
+path: /path/to/mammo_dataset
+
+# Option A: one metadata CSV with a split column.
+csv: metadata.csv
+split_col: split
+train_split: train
+val_split: [val, valid, validation, test]
+
+# Option B: separate files. Uncomment these instead of csv if needed.
+# train_csv: train_metadata.csv
+# val_csv: val_metadata.csv
+
+# CSV columns. Defaults already detect these names, but keeping them explicit
+# makes the dataset contract easier to review.
+image_col: link
+image_id_col: image_id
+image_cls_col: cancer
+bbox_cols: [x, y, width, height]
+bbox_format: xywh
+width_col: img_width
+height_col: img_height
+
+# Relative image paths in image_col are joined against image_root if set,
+# otherwise against path.
+# image_root: images
+
+# Detection classes for the DETR head.
+names:
+  0: lesion
+
+# Image-level classification classes for the extra M2DETR head.
+cls_names:
+  0: negative
+  1: positive
+
+# Preprocessing controls.
+validate_bbox: true
+load_image_dims: true
+min_area: 1

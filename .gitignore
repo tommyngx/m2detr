@@ -1,0 +1,39 @@
+# Project scratch data
+notebook/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Training/runtime outputs
+runs/
+wandb/
+logs/
+weights/
+checkpoints/
+*.pt
+*.pth
+*.onnx
+*.engine
+*.mlpackage
+
+# Local env files
+.env
+.venv/
+venv/
+env/

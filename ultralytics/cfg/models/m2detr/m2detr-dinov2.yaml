@@ -1,0 +1,18 @@
+# Ultralytics 🚀 AGPL-3.0 License - https://ultralytics.com/license
+
+# M2DETR with timm DINOv2 ViT-S/14 backbone. DINOv2 uses same-stride token features, so it goes directly to decoder.
+
+nc: 1
+cls_nc: 2
+scales:
+  n: [1.00, 1.00, 1024]
+
+backbone:
+  # args: [ignored_out_channels, timm_model, pretrained, out_indices, in_chans, freeze, model_kwargs, pad_divisor]
+  - [-1, 1, M2TimmBackbone, [384, vit_small_patch14_reg4_dinov2.lvd142m, False, [0, 1, 2], 3, False, {dynamic_img_size: True}, 14]]
+  - [0, 1, Index, [384, 0]]
+  - [0, 1, Index, [384, 1]]
+  - [0, 1, Index, [384, 2]]
+
+head:
+  - [[1, 2, 3], 1, M2RTDETRDecoder, [nc, cls_nc, 256, 100, 4, 8, 3, 1024]]

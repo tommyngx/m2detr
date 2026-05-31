@@ -1,0 +1,35 @@
+# Ultralytics 🚀 AGPL-3.0 License - https://ultralytics.com/license
+
+# M2DETR with timm ConvNeXtV2-Tiny backbone.
+
+nc: 1
+cls_nc: 2
+scales:
+  n: [1.00, 1.00, 1024]
+
+backbone:
+  - [-1, 1, M2TimmBackbone, [768, convnextv2_tiny.fcmae_ft_in22k_in1k, False, [1, 2, 3], 3, False]]
+  - [0, 1, Index, [192, 0]]
+  - [0, 1, Index, [384, 1]]
+  - [0, 1, Index, [768, 2]]
+
+head:
+  - [3, 1, Conv, [256, 1, 1, None, 1, 1, False]]
+  - [-1, 1, AIFI, [1024, 8]]
+  - [-1, 1, Conv, [256, 1, 1]]
+  - [-1, 1, nn.Upsample, [None, 2, nearest]]
+  - [2, 1, Conv, [256, 1, 1, None, 1, 1, False]]
+  - [[-2, -1], 1, Concat, [1]]
+  - [-1, 3, RepC3, [256]]
+  - [-1, 1, Conv, [256, 1, 1]]
+  - [-1, 1, nn.Upsample, [None, 2, nearest]]
+  - [1, 1, Conv, [256, 1, 1, None, 1, 1, False]]
+  - [[-2, -1], 1, Concat, [1]]
+  - [-1, 3, RepC3, [256]]
+  - [-1, 1, Conv, [256, 3, 2]]
+  - [[-1, 11], 1, Concat, [1]]
+  - [-1, 3, RepC3, [256]]
+  - [-1, 1, Conv, [256, 3, 2]]
+  - [[-1, 6], 1, Concat, [1]]
+  - [-1, 3, RepC3, [256]]
+  - [[15, 18, 21], 1, M2RTDETRDecoder, [nc, cls_nc, 256, 100, 4, 8, 3, 1024]]
