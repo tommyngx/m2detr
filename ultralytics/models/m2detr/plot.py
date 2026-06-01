@@ -73,7 +73,7 @@ def plot_m2detr_results(csv_path: str | Path, save_dir: str | Path, on_plot=None
 
     Saves:
         - figures/m2detr_training.png: loss, detection metrics, image-classification metrics.
-        - figures/m2detr_losses.png: individual M2DETR train/val loss components.
+        - figures/m2detr_loss.png: compact M2DETR train/val loss components.
     """
     rows = _read_results_csv(csv_path)
     if not rows:
@@ -87,10 +87,15 @@ def plot_m2detr_results(csv_path: str | Path, save_dir: str | Path, on_plot=None
     if not _present(x):
         x = np.arange(1, len(rows) + 1, dtype=float)
 
-    train_loss_keys = ["train/giou_loss", "train/cls_loss", "train/l1_loss", "train/image_cls_loss"]
-    val_loss_keys = ["val/giou_loss", "val/cls_loss", "val/l1_loss", "val/image_cls_loss"]
+    train_loss_keys = ["train/box_loss", "train/cls_loss"]
+    val_loss_keys = ["val/box_loss", "val/cls_loss"]
     train_losses = [_series(rows, k) for k in train_loss_keys]
     val_losses = [_series(rows, k) for k in val_loss_keys]
+    if not any(_present(y) for y in train_losses):
+        train_loss_keys = ["train/giou_loss", "train/cls_loss", "train/l1_loss", "train/image_cls_loss"]
+        val_loss_keys = ["val/giou_loss", "val/cls_loss", "val/l1_loss", "val/image_cls_loss"]
+        train_losses = [_series(rows, k) for k in train_loss_keys]
+        val_losses = [_series(rows, k) for k in val_loss_keys]
     train_total = np.nansum(np.vstack(train_losses), axis=0)
     val_total = np.nansum(np.vstack(val_losses), axis=0)
 
@@ -124,11 +129,13 @@ def plot_m2detr_results(csv_path: str | Path, save_dir: str | Path, on_plot=None
     axes[1].set_ylabel("Score")
     axes[1].set_ylim(bottom=0)
 
-    _plot_line(axes[2], x, _series(rows, "train/image_cls_loss"), "Train image cls loss", color="#c1121f")
-    _plot_line(axes[2], x, _series(rows, "val/image_cls_loss"), "Val image cls loss", color="#1b7f3a")
+    _plot_line(axes[2], x, _series(rows, "train/cls_loss"), "Train cls loss", color="#c1121f")
+    _plot_line(axes[2], x, _series(rows, "val/cls_loss"), "Val cls loss", color="#1b7f3a")
     image_acc = _series(rows, "metrics/image_cls_acc")
     if _plot_line(axes[2], x, image_acc, "Val image cls acc", color="#006ba4"):
         _highlight_best(axes[2], x, image_acc, "max", "Best image acc")
+    image_auc = _series(rows, "metrics/image_cls_auc")
+    _plot_line(axes[2], x, image_auc, "Val image cls AUC", color="#ff800e")
     axes[2].set_title("Image Classification")
     axes[2].set_xlabel("Epoch")
     axes[2].set_ylabel("Loss / Accuracy")
@@ -143,14 +150,19 @@ def plot_m2detr_results(csv_path: str | Path, save_dir: str | Path, on_plot=None
     plt.close(fig)
     saved.append(path)
 
-    fig, axes = plt.subplots(2, 2, figsize=(18, 12), tight_layout=True)
-    axes = axes.ravel()
-    loss_specs = [
-        ("giou_loss", "GIoU Loss"),
-        ("cls_loss", "Detection Class Loss"),
-        ("l1_loss", "BBox L1 Loss"),
-        ("image_cls_loss", "Image Class Loss"),
-    ]
+    loss_specs = [("box_loss", "Box Loss"), ("cls_loss", "Classification Loss")]
+    if not _present(_series(rows, "train/box_loss")):
+        loss_specs = [
+            ("giou_loss", "GIoU Loss"),
+            ("cls_loss", "Detection Class Loss"),
+            ("l1_loss", "BBox L1 Loss"),
+            ("image_cls_loss", "Image Class Loss"),
+        ]
+        fig, axes = plt.subplots(2, 2, figsize=(18, 12), tight_layout=True)
+        axes = axes.ravel()
+    else:
+        fig, axes = plt.subplots(1, 2, figsize=(18, 7), tight_layout=True)
+        axes = axes.ravel()
     for ax, (name, title) in zip(axes, loss_specs):
         _plot_line(ax, x, _series(rows, f"train/{name}"), f"train/{name}", color="#c1121f")
         _plot_line(ax, x, _series(rows, f"val/{name}"), f"val/{name}", color="#1b7f3a")
@@ -161,7 +173,7 @@ def plot_m2detr_results(csv_path: str | Path, save_dir: str | Path, on_plot=None
         if ax.get_legend_handles_labels()[0]:
             ax.legend()
 
-    path = figures_dir / "m2detr_losses.png"
+    path = figures_dir / "m2detr_loss.png"
     _save(fig, path, on_plot)
     plt.close(fig)
     saved.append(path)

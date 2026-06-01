@@ -82,8 +82,17 @@ class M2DETRTrainer(RTDETRTrainer):
 
     def get_validator(self):
         """Return the standard RT-DETR validator while tracking the extra training loss."""
-        self.loss_names = "giou_loss", "cls_loss", "l1_loss", "image_cls_loss"
+        self.loss_names = "box_loss", "cls_loss"
         return M2DETRValidator(self.test_loader, save_dir=self.save_dir, args=copy(self.args), _callbacks=self.callbacks)
+
+    def save_metrics(self, metrics):
+        """Save epoch metrics and update M2DETR plots immediately."""
+        super().save_metrics(metrics)
+        if RANK in {-1, 0}:
+            try:
+                plot_m2detr_results(self.csv, self.save_dir, on_plot=self.on_plot)
+            except Exception as e:
+                LOGGER.warning(f"Failed to update M2DETR epoch plots: {e}")
 
     def plot_training_labels(self):
         """Plot detection labels for CSV and YOLO datasets without failing on negative-only splits."""
@@ -104,8 +113,7 @@ class M2DETRTrainer(RTDETRTrainer):
         )
 
     def plot_metrics(self):
-        """Save Ultralytics plots plus M2DETR-specific research plots."""
-        super().plot_metrics()
+        """Save M2DETR-specific research plots."""
         try:
             plot_m2detr_results(self.csv, self.save_dir, on_plot=self.on_plot)
         except Exception as e:

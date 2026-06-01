@@ -10,7 +10,7 @@ import numpy as np
 import torch
 
 from ultralytics.models.rtdetr.val import RTDETRValidator
-from ultralytics.utils import YAML
+from ultralytics.utils import LOGGER, YAML
 from ultralytics.utils.metrics import DetMetrics
 
 from .data import build_m2detr_csv_dataset, check_m2detr_csv_dataset, is_m2detr_csv_dataset
@@ -23,9 +23,12 @@ class M2DETRMetrics(DetMetrics):
         """Return a concise summary instead of dumping all metric attributes and curves."""
         try:
             p, r, map50, map5095 = self.mean_results()
+            acc = getattr(self, "image_cls_acc", 0.0)
+            auc = getattr(self, "image_cls_auc", 0.0)
             return (
                 "M2DETRMetrics("
-                f"precision={p:.5g}, recall={r:.5g}, mAP50={map50:.5g}, mAP50-95={map5095:.5g}"
+                f"Acc={acc:.5g}, AUC={auc:.5g}, precision={p:.5g}, recall={r:.5g}, "
+                f"mAP50={map50:.5g}, mAP50-95={map5095:.5g}"
                 ")"
             )
         except Exception:
@@ -115,6 +118,7 @@ class M2DETRValidator(RTDETRValidator):
         self.image_cls_true = []
         self.image_cls_pred = []
         self.image_cls_conf = []
+        self.image_cls_probs = []
 
     def postprocess(self, preds: torch.Tensor | list[torch.Tensor] | tuple[torch.Tensor]):
         """Store image classification logits, then run RT-DETR postprocess."""
@@ -136,6 +140,7 @@ class M2DETRValidator(RTDETRValidator):
         self.image_cls_true.extend(labels.detach().cpu().tolist())
         self.image_cls_pred.extend(pred.detach().cpu().tolist())
         self.image_cls_conf.extend(conf.detach().cpu().tolist())
+        self.image_cls_probs.extend(probs.detach().cpu().tolist())
 
     def get_stats(self) -> dict[str, Any]:
         """Return detection stats plus optional image-level classification stats."""
@@ -144,8 +149,10 @@ class M2DETRValidator(RTDETRValidator):
             return stats
         y_true = np.asarray(self.image_cls_true, dtype=int)
         y_pred = np.asarray(self.image_cls_pred, dtype=int)
+        y_prob = np.asarray(self.image_cls_probs, dtype=float)
         labels = np.union1d(y_true, y_pred)
         acc = float((y_true == y_pred).mean()) if y_true.size else 0.0
+        auc = _classification_auc(y_true, y_prob)
         precisions, recalls, f1s = [], [], []
         for cls in labels:
             tp = float(((y_pred == cls) & (y_true == cls)).sum())
@@ -160,12 +167,45 @@ class M2DETRValidator(RTDETRValidator):
         stats.update(
             {
                 "metrics/image_cls_acc": acc,
+                "metrics/image_cls_auc": auc,
                 "metrics/image_cls_precision": float(np.mean(precisions)) if precisions else 0.0,
                 "metrics/image_cls_recall": float(np.mean(recalls)) if recalls else 0.0,
                 "metrics/image_cls_f1": float(np.mean(f1s)) if f1s else 0.0,
             }
         )
+        self.metrics.image_cls_acc = acc
+        self.metrics.image_cls_auc = auc
+        self.metrics.image_cls_precision = stats["metrics/image_cls_precision"]
+        self.metrics.image_cls_recall = stats["metrics/image_cls_recall"]
+        self.metrics.image_cls_f1 = stats["metrics/image_cls_f1"]
         return stats
+
+    def get_desc(self) -> str:
+        """Return a compact multitask validation table header."""
+        return ("%22s" + "%11s" * 4) % ("Class", "Acc", "AUC", "mAP50", "mAP50-95")
+
+    def print_results(self) -> None:
+        """Print compact multitask metrics during training and fuller details for standalone val/test."""
+        p, r, map50, map5095 = self.metrics.mean_results()
+        acc = getattr(self.metrics, "image_cls_acc", 0.0)
+        auc = getattr(self.metrics, "image_cls_auc", 0.0)
+        pf = "%22s" + "%11.3g" * 4
+        LOGGER.info(pf % ("all", acc, auc, map50, map5095))
+        if self.metrics.nt_per_class.sum() == 0:
+            LOGGER.warning(f"no labels found in {self.args.task} set, cannot compute detection metrics without labels")
+        if not self.training:
+            LOGGER.info(
+                "Details: images=%s, instances=%s, Box(P=%.3g, R=%.3g), cls(P=%.3g, R=%.3g, F1=%.3g)"
+                % (
+                    self.seen,
+                    int(self.metrics.nt_per_class.sum()),
+                    p,
+                    r,
+                    getattr(self.metrics, "image_cls_precision", 0.0),
+                    getattr(self.metrics, "image_cls_recall", 0.0),
+                    getattr(self.metrics, "image_cls_f1", 0.0),
+                )
+            )
 
     def finalize_metrics(self) -> None:
         """Finalize detection metrics and save image classification confusion matrix if available."""
@@ -203,3 +243,38 @@ class M2DETRValidator(RTDETRValidator):
         fig.savefig(path, dpi=200, bbox_inches="tight")
         plt.close(fig)
         self.on_plot(path, {"type": "image_cls_confusion_matrix", "matrix": cm.tolist()})
+
+
+def _binary_auc(y_true: np.ndarray, y_score: np.ndarray) -> float:
+    """Compute ROC AUC for binary labels using rank statistics."""
+    y_true = y_true.astype(bool)
+    n_pos = int(y_true.sum())
+    n_neg = int((~y_true).sum())
+    if n_pos == 0 or n_neg == 0:
+        return 0.0
+    order = np.argsort(y_score)
+    sorted_scores = y_score[order]
+    ranks = np.empty_like(y_score, dtype=float)
+    i = 0
+    while i < len(sorted_scores):
+        j = i + 1
+        while j < len(sorted_scores) and sorted_scores[j] == sorted_scores[i]:
+            j += 1
+        ranks[order[i:j]] = (i + 1 + j) / 2.0
+        i = j
+    rank_sum_pos = ranks[y_true].sum()
+    return float((rank_sum_pos - n_pos * (n_pos + 1) / 2.0) / (n_pos * n_neg))
+
+
+def _classification_auc(y_true: np.ndarray, y_prob: np.ndarray) -> float:
+    """Compute binary or macro one-vs-rest AUC from class probabilities."""
+    if y_true.size == 0 or y_prob.ndim != 2 or y_prob.shape[0] != y_true.size:
+        return 0.0
+    if y_prob.shape[1] == 2:
+        return _binary_auc((y_true == 1).astype(int), y_prob[:, 1])
+    aucs = []
+    for cls in np.unique(y_true):
+        if cls < 0 or cls >= y_prob.shape[1]:
+            continue
+        aucs.append(_binary_auc((y_true == cls).astype(int), y_prob[:, cls]))
+    return float(np.mean(aucs)) if aucs else 0.0

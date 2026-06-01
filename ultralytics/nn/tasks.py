@@ -1020,10 +1020,9 @@ class M2DETRDetectionModel(RTDETRDetectionModel):
             cls_logits=cls_logits,
             image_cls=image_cls,
         )
-        return sum(loss.values()), torch.as_tensor(
-            [loss[k].detach() for k in ("loss_giou", "loss_class", "loss_bbox", "loss_image_class")],
-            device=img.device,
-        )
+        box_loss = loss["loss_giou"] + loss["loss_class"] + loss["loss_bbox"]
+        cls_loss = loss["loss_image_class"]
+        return sum(loss.values()), torch.as_tensor([box_loss.detach(), cls_loss.detach()], device=img.device)
 
 
 class WorldModel(DetectionModel):
